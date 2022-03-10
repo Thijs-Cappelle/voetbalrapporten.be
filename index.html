@@ -1,0 +1,389 @@
+﻿<!DOCTYPE html>
+<html>
+<title>Voetbalrapporten</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="w3-styles.css">
+<link rel="stylesheet" href="css.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+<style>
+
+</style>
+
+<body>
+    <div id="home" style="margin-top:20px"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.5.0/Chart.min.js"></script>
+    <script src="jquery-3.3.1.min.js"></script>
+    <script>
+        var teams = [];
+        var matchen = [];
+        var provincies = ["Antwerpen", "Brabant Voetbal Vlaanderen", "Limburg", "Oost-Vlaanderen", "West-Vlaanderen"];
+        var competitiesPerProvincie = [18, 18, 12, 22, 13];
+        var competitieNaam = "";
+
+        class Spelers {
+            constructor() {
+                this.spelers = new Array();
+            }
+
+            nieuweSpeler(naam, goals, selecties, basisplaatsen, invalbeurten, geel, rood, minuten) {
+                this.spelers.push({ naam: naam, aantalGoals: goals, selecties: selecties, basisplaatsen: basisplaatsen, invalbeurten: invalbeurten, geel: geel, rood: rood, minuten: minuten, geschorst: rood > 0 ? true : false });
+            }
+
+            nieuweBeloftenSpeler(naam, geel, rood) {
+                var reedsInArray = false;
+                for (var i = 0; i < this.spelers.length; i++) {
+                    if (naam == this.spelers[i].naam) {
+                        this.spelers[i].selecties++;
+                        this.spelers[i].geel += geel;
+                        this.spelers[i].rood += rood;
+                        reedsInArray = true;
+                    }
+                }
+                if (!reedsInArray) {
+                    this.nieuweSpeler(naam, 0, 1, 0, 0, geel, rood);
+                }
+                this.spelers.sort((a, b) => (a.selecties < b.selecties) ? 1 : -1);
+                $("#home").html(showBeloften(this.spelers));
+            }
+
+            nieuweBasisSpeler(naam, goals, geel, rood, minuten) {
+                var reedsInArray = false;
+                for (var i = 0; i < this.spelers.length; i++) {
+                    if (naam == this.spelers[i].naam) {
+                        this.spelers[i].selecties++;
+                        this.spelers[i].basisplaatsen++;
+                        this.spelers[i].aantalGoals += goals;
+                        this.spelers[i].geel += geel;
+                        this.spelers[i].rood += rood;
+                        this.spelers[i].minuten += minuten;
+                        if (geel > 0 && this.spelers[i].geel == 3){
+                            this.spelers[i].geschorst = true;
+                        }
+                        if (rood > 0){
+                            this.spelers[i].geschorst = true;
+                        }
+                        reedsInArray = true;
+                    }
+                }
+                if (!reedsInArray) {
+                    this.nieuweSpeler(naam, goals, 1, 1, 0, geel, rood, minuten);
+                }
+                this.spelers.sort((a, b) => (a.minuten < b.minuten) ? 1 : -1);
+                $("#home").html(showScorers(this.spelers));
+            }
+
+            nieuweInvaller(naam, goals, ingevallen, geel, rood, minuten) {
+                var reedsInArray = false;
+                for (var i = 0; i < this.spelers.length; i++) {
+                    if (naam == this.spelers[i].naam) {
+                        this.spelers[i].selecties++;
+                        if (ingevallen) {
+                            this.spelers[i].invalbeurten++;
+                        }
+                        this.spelers[i].aantalGoals += goals;
+                        this.spelers[i].geel += geel;
+                        this.spelers[i].rood += rood;
+                        this.spelers[i].minuten += minuten;
+                        if (geel > 0 && this.spelers[i].geel == 3){
+                            this.spelers[i].geschorst = true;
+                        }
+                        if (rood > 0){
+                            this.spelers[i].geschorst = true;
+                        }
+                        reedsInArray = true;
+                    }
+                }
+                if (!reedsInArray) {
+                    this.nieuweSpeler(naam, goals, 1, 0, ingevallen ? 1 : 0, geel, rood, minuten);
+                }
+                this.spelers.sort((a, b) => (a.minuten < b.minuten) ? 1 : -1);
+                $("#home").html(showScorers(this.spelers));
+            }
+
+            schorsingenWegschelden(){
+                 for (var i = 0; i < this.spelers.length; i++) {
+                    if (this.spelers[i].geschorst){
+                        this.spelers[i].geschorst = false;
+                    }
+                }
+            }
+
+        }
+
+        $(document).ready(function () {
+            $("#home").html(showProvincies());
+            
+        });
+
+        function showProvincies(){
+            var result = "<p style='margin-top:70px'>Kies een provincie: </p><select id='selectprovincies'>";
+            for (var i = 0; i < provincies.length; i++) {
+                result += "<option value='" + competitiesPerProvincie[i] + "'>" + provincies[i] + "</option>";
+            }
+            result += "</select><button style='margin-left:20px' id='btnProvincies' onclick='competities()'>Volgende</button>";
+            return result;
+        }
+
+        function competities(){
+            var provincie = $("#selectprovincies option:selected").text();
+            var aantal = parseInt($("#selectprovincies").val());
+            var competities = [];
+
+            $.get("https://datalake-prod2018.rbfa.be/graphql?operationName=competitions&variables=%7B%22language%22%3A%22nl%22%2C%22discipline%22%3A%22Football%22%2C%22committee%22%3A%22" + provincie.replace(" ", "%20") + "%22%2C%22competitionType%22%3A%22championship%22%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%2230393c7834e50a35ab831b209f71fcd8042db30bd27b57351369a1971b60e8ad%22%7D%7D", function (data, status){
+                var comps = data.data.competitions;
+                for (var i = 0; i < aantal; i++){
+                    competities.push(comps[i]);
+                }
+                $("#home").html(showCompetities(competities));
+            });
+        }
+
+        function showCompetities(array){
+            var result = "<p style='margin-top:70px'>Kies een provincie: </p><select id='selectcompetities'>";
+            for (var i = 0; i < array.length; i++) {
+                result += "<option value='" + array[i].id + "'>" + array[i].name + "</option>";
+            }
+            result += "</select><button style='margin-left:20px' id='btnProvincies' onclick='ploegen()'>Volgende</button>";
+            return result;
+        }
+
+        function ploegen(){
+            var competitie = $("#selectcompetities option:selected").text();
+            competitieNaam = competitie;
+            var competitieId = $("#selectcompetities").val();
+
+            $.get("https://datalake-prod2018.rbfa.be/graphql?operationName=GetSeriesRankings&variables=%7B%22seriesId%22%3A%22" + competitieId + "%22%2C%22language%22%3A%22nl%22%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%22c4d908193e39b4f896426a22afb5d4de51b7c2da555c82b77bc53d24e5b282c5%22%7D%7D", function (data, status) {
+                var teams = data.data.seriesRankings.rankings[0].teams;
+                var ploegenSelect = [];
+                for (var i = 0; i < teams.length; i++) {
+                    ploegenSelect.push({ naam: teams[i].name, id: teams[i].teamId })
+                }
+                $("#home").html(showSelectPloeg(ploegenSelect));
+            });
+        }
+
+        function showSchorsing(speler){
+            var result = "<div class='w3-card-4' style='display:inline-block; margin: 30px; width: 300px; text-align:center'><header class='w3-container w3-red'><h3>Geschorst</h3></header><div class='w3-container'><h3>" + speler.naam + "</h3></div></div>"
+            return result;
+        }
+
+        function scout() {
+            var ploegid = $("#selectploegen").val();
+            $.get("https://datalake-prod2018.rbfa.be/graphql?operationName=GetTeamCalendar&variables=%7B%22teamId%22%3A%22" + ploegid + "%22%2C%22language%22%3A%22nl%22%2C%22sortByDate%22%3A%22asc%22%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%22bf4be0c185dee11a27079e529a04d41dc692389ada678dac1f2280e056de7b7d%22%7D%7D", function (data, status) {
+                var matchen = data.data.teamCalendar;
+                var matchids = [];
+                var spelers = new Spelers();
+
+                for (var i = 0; i < matchen.length; i++) {
+                    if (matchen[i].series.name == competitieNaam && matchen[i].outcome.status == "finished") {
+                        matchids.push(matchen[i].id);
+                    }
+                }
+                for (var i = 0; i < matchids.length; i++) {
+                    $.get("https://datalake-prod2018.rbfa.be/graphql?operationName=GetMatchDetail&variables=%7B%22matchId%22%3A%22" + matchids[i] + "%22%2C%22language%22%3A%22nl%22%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%22d312adc2e697ca921b4572c99550e7abdc0586d87454e56ac359a84fabfea33f%22%7D%7D", function (data, status) {
+                        var team = data.data.matchDetail.homeTeam.id == ploegid ? data.data.matchDetail.homeTeam : data.data.matchDetail.awayTeam;
+                        spelers.schorsingenWegschelden();
+                        for (var j = 0; j < team.players.length; j++) {
+                            var minuten = team.players[j].minuteOut == null ? 90 : parseInt(team.players[j].minuteOut);
+                            spelers.nieuweBasisSpeler(team.players[j].firstName + " " + team.players[j].lastName, team.players[j].goals.length, team.players[j].minuteYellowCard == null ? 0 : ((team.players[j].minuteYellowRedCard == null) ? 1 : 0), team.players[j].minuteRedCard == null && team.players[j].minuteYellowRedCard == null ? 0 : 1, minuten);
+                        }
+                        for (var j = 0; j < team.substitutes.length; j++) {
+                            var minuten = team.substitutes[j].minuteIn == null ? 0 : 90 - parseInt(team.substitutes[j].minuteIn);
+                            spelers.nieuweInvaller(team.substitutes[j].firstName + " " + team.substitutes[j].lastName, team.substitutes[j].goals.length, team.substitutes[j].minuteIn != null, team.substitutes[j].minuteYellowCard == null ? 0 : ((team.substitutes[j].minuteYellowRedCard == null) ? 1 : 2), team.substitutes[j].minuteRedCard == null && team.substitutes[j].minuteYellowRedCard == null ? 0 : 1, minuten);
+                        }
+                    });
+                }
+            });
+        }
+
+        function sorteerSpelers(kolom){
+            if (kolom == "goals"){
+                teams.sort((a, b) => a.aantalGoals <= b.aantalGoals ? 1 : -1);
+            }
+            else if (kolom == "geel"){
+                teams.sort((a, b) => a.geel <= b.geel ? 1 : -1);
+            }
+            else if (kolom == "rood"){
+                teams.sort((a, b) => a.rood <= b.rood ? 1 : -1);
+            }
+            else if (kolom == "selecties"){
+                teams.sort((a, b) => a.selecties <= b.selecties ? 1 : -1);
+            }
+            else if (kolom == "basisplaatsen"){
+                teams.sort((a, b) => a.basisplaatsen <= b.basisplaatsen ? 1 : -1);
+            }
+            else if (kolom == "invalbeurten"){
+                teams.sort((a, b) => a.invalbeurten <= b.invalbeurten ? 1 : -1);
+            }
+            else if (kolom == "minuten"){
+                teams.sort((a, b) => a.minuten <= b.minuten ? 1 : -1);
+            }
+            $("#home").html(showScorers(teams));
+        }
+
+        function showScorers(array) {
+            teams = array;
+            var result = "<button style='margin:15px' onclick=\"exportTableToExcel('tblData', 'players-data')\">Exporteer naar Excel</button><button style='margin:15px' onclick='showCharts()'>Rapport</button><table id='spelerstabel' class='w3-table w3-bordered w3-striped w3-border w3-hoverable'><tr><th>Speler</th><th onclick='sorteerSpelers(\"goals\")' style='cursor:pointer'>Goals</th><th onclick='sorteerSpelers(\"selecties\")' style='cursor:pointer'>Selecties</th><th onclick='sorteerSpelers(\"basisplaatsen\")' style='cursor:pointer'>Basisplaatsen</th><th onclick='sorteerSpelers(\"invalbeurten\")' style='cursor:pointer'>Invalbeurten</th><th onclick='sorteerSpelers(\"geel\")' style='cursor:pointer'>Geel</th><th onclick='sorteerSpelers(\"rood\")' style='cursor:pointer'>Rood</th><th onclick='sorteerSpelers(\"minuten\")' style='cursor:pointer'>Minuten</th></tr>";
+            for (var i = 0; i < array.length; i++) {
+                result += "<tr><td style=color:" + (array[i].geschorst ? "red" : "black") + ">" + array[i].naam + "</td><td>" + array[i].aantalGoals + "</td><td>" + array[i].selecties + "</td><td>" + array[i].basisplaatsen + "</td><td>" + array[i].invalbeurten + "</td><td>" + array[i].geel + "</td><td>" + array[i].rood + "</td><td>" + array[i].minuten + "</td></tr>";
+            }
+            result += "</table>"
+            return result;
+        }
+
+        function showSelectPloeg(array) {
+            var result = "<p style='margin-top:70px'>Kies een ploeg: </p><select id='selectploegen'>";
+            for (var i = 0; i < array.length; i++) {
+                result += "<option value=" + array[i].id + ">" + array[i].naam + "</option>";
+            }
+            result += "</select><button style='margin-left:20px' id='btnScout' onclick='scout()'>Scout!</button>";
+            return result;
+        }
+
+        function showCharts() {
+            var result = "";
+            result += "<div style='margin: 0 auto; width: fit-content'>";
+            var gevaarlijksteSpeler = teams[0].naam;
+            var rendement = teams[0].minuten / teams[0].aantalGoals;
+            for (var i = 0; i < teams.length; i++){
+                if (teams[i].geschorst){
+                    result += showSchorsing(teams[i]);
+                }
+                if (teams[i].minuten / teams[i].aantalGoals < rendement && teams[i].minuten > 0){
+                    gevaarlijksteSpeler = teams[i].naam;
+                    rendement = teams[i].minuten / teams[i].aantalGoals;
+                }
+            }
+            result += "<div class='w3-card-4' style='display:inline-block; margin: 30px; width: 300px; text-align:center'><header class='w3-container w3-red'><h3>1 goal per " + Math.round(rendement) + " minuten</h3></header><div class='w3-container'><h3>" + gevaarlijksteSpeler + "</h3></div></div>";
+            result += "</div>"
+
+            result += "<canvas id='myChart1' style='width:100%;'></canvas><canvas id='myChart2' style='width:100%;max-width:700px;display:inline-block'></canvas><canvas id='myChart3' style='width:100%;max-width:700px;display:inline-block;'></canvas>";
+            $("#home").html(result);
+            
+            var xValues1 = [];
+            var yValues1 = [];
+            var barColors1 = [];
+            var xValues2 = [];
+            var yValues2 = []
+            var barColors2 = [];
+            var xValues3 = [];
+            var yValues3 = []
+            var barColors3 = [];
+
+            teams.sort((a,b) => a.minuten < b.minuten ? 1 : -1)
+
+            for (var i = 0; i < teams.length; i++){
+                xValues1.push(teams[i].naam);
+                yValues1.push(teams[i].minuten);
+                barColors1.push("black");
+            }
+            var teamsgoals = teams.filter(a => a.aantalGoals > 0);
+            teamsgoals.sort((a, b) => a.aantalGoals < b.aantalGoals ? 1 : -1);
+
+            for (var i = 0; i < teamsgoals.length; i++){
+                xValues2.push(teamsgoals[i].naam);
+                yValues2.push(teamsgoals[i].aantalGoals);
+                barColors2.push("black");
+            }
+
+            var teamsgeel = teams.filter(a => a.geel > 0);
+            teamsgeel.sort((a, b) => a.geel < b.geel ? 1 : -1);
+            console.log(teamsgeel);
+
+            for (var i = 0; i < teamsgeel.length; i++){
+                xValues3.push(teamsgeel[i].naam);
+                yValues3.push(teamsgeel[i].geel);
+                barColors3.push("black");
+            }
+
+            new Chart("myChart1", {
+                type: "horizontalBar",
+                data: {
+                    labels: xValues1,
+                    datasets: [{
+                        backgroundColor: barColors1,
+                        data: yValues1
+                    }]
+                },
+                options: {
+                    legend: { display: false },
+                    title: {
+                        display: true,
+                        text: "Minuten per speler"
+                    }
+                }
+            });
+
+            new Chart("myChart2", {
+                type: "horizontalBar",
+                data: {
+                    labels: xValues2,
+                    datasets: [{
+                        backgroundColor: barColors2,
+                        data: yValues2
+                    }]
+                },
+                options: {
+                    legend: { display: false },
+                    title: {
+                        display: true,
+                        text: "Goals per speler"
+                    }
+                }
+            });
+
+            new Chart("myChart3", {
+                type: "horizontalBar",
+                data: {
+                    labels: xValues3,
+                    datasets: [{
+                        backgroundColor: barColors3,
+                        data: yValues3
+                    }]
+                },
+                options: {
+                    legend: { display: false },
+                    title: {
+                        display: true,
+                        text: "Gele kaarten per speler"
+                    }
+                }
+            });
+        }
+
+        function exportTableToExcel(tableID, filename = '') {
+            var downloadLink;
+            var dataType = 'application/vnd.ms-excel';
+            var tableSelect = document.getElementById("spelerstabel");
+            var tableHTML = tableSelect.outerHTML.replace(/ /g, '%20');
+            // Specify file name
+            filename = filename ? filename + '.xls' : 'excel_data.xls';
+
+            // Create download link element
+            downloadLink = document.createElement("a");
+
+            document.body.appendChild(downloadLink);
+
+            if (navigator.msSaveOrOpenBlob) {
+                var blob = new Blob(['\ufeff', tableHTML], {
+                    type: dataType
+                });
+                navigator.msSaveOrOpenBlob(blob, filename);
+            } else {
+                // Create a link to the file
+                downloadLink.href = 'data:' + dataType + ', ' + tableHTML;
+
+                // Setting the file name
+                downloadLink.download = filename;
+
+                //triggering the function
+                downloadLink.click();
+            }
+        }
+    </script>
+
+</body>
+
+</html>
